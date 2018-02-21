@@ -106,7 +106,137 @@ const MatterAttractors = {
       // to apply forces to both bodies
       Matter.Body.applyForce(bodyA, bodyA.position, Matter.Vector.neg(force));
       Matter.Body.applyForce(bodyB, bodyB.position, force);
-    }
+    },
+
+    /**
+     * An attractor function that applies magnetic pull to `metallic` bodies.
+     * Use this by pushing `MatterAttractors.Attractors.magnet` to your body's `body.plugin.attractors` array.
+     * The magnetic pull defaults to `0` (implying it's metallic but not magnetic) which you can change to a
+     * positive number for a particular body by changing `body.plugin.magnet.pull`. Magnetic poles default to
+     * the midpoint between the body's first two vertices and the midpoint between the body's middle and
+     * middle-plus-one vertices. This can be changed by specifying two faces according to the body vertices'
+     * indexes at `body.plugin.magnet.north` and `body.plugin.magnet.south`. If the magnetic pull is `0`,
+     * magnetic poles are ignored for that body.
+     * @function MatterAttractors.Attractors.magnet
+     * @param {Matter.Body} bodyA The first body.
+     * @param {Matter.Body} bodyB The second body.
+     * @returns {void} No return value.
+     */
+    magnet: (function () {
+      var northA = {cornerA: null, cornerB: null, x: 0, y: 0},
+        southA = {cornerA: null, cornerB: null, x: 0, y: 0},
+        northB = {cornerA: null, cornerB: null, x: 0, y: 0},
+        southB = {cornerA: null, cornerB: null, x: 0, y: 0},
+        emptyVector = {x: 0, y: 0},
+        getVector = function (face, point) { // This returns a directional unit vector for a point according to where it's located relative to the face of a pole.
+          var norm = Matter.Vector.perp(Matter.Vector.sub(face.cornerB, face.cornerA), true),
+            rel = Matter.Vector.sub(point, face),
+            targetNorm = null,
+            halfFaceSq = Matter.Vector.magnitudeSquared(Matter.Vector.sub(face.cornerA, face));
+
+          if (Matter.Vector.magnitudeSquared(rel) < halfFaceSq) {
+            return Matter.Vector.neg(Matter.Vector.add(rel, norm));
+          } else if (Matter.Vector.dot(norm, rel) <= 0) { // behind
+            return norm;
+          } else if (Matter.Vector.magnitudeSquared(Matter.Vector.sub(face.cornerA, point)) < halfFaceSq) { // near corner, need to pull towards face
+            rel = Matter.Vector.sub(point, face.cornerA);
+            return Matter.Vector.normalise(Matter.Vector.perp(rel, false));
+          } else if (Matter.Vector.magnitudeSquared(Matter.Vector.sub(face.cornerB, point)) < halfFaceSq) { // use corner B
+            rel = Matter.Vector.sub(point, face.cornerB);
+            return Matter.Vector.normalise(Matter.Vector.perp(rel, true));
+          } else { // farther away
+            targetNorm = Matter.Vector.mult(Matter.Vector.normalise(norm), -0.5 * Matter.Vector.magnitude(rel) / Math.abs(Math.cos(Matter.Vector.angle(rel, norm))));
+            return Matter.Vector.sub(targetNorm, rel);
+          }
+        },
+        getForce = function (poleA, poleB, pull, distanceSq) {
+          var direction = getVector(poleA, poleB),
+            normal = Matter.Vector.normalise(direction),
+            magnitude = -pull / Math.max(pull * 10, distanceSq);
+            
+          return Matter.Vector.mult(normal, magnitude);
+        },
+        applyForce = function (poleA, poleB, bodyA, bodyB, pullA, pullB) {
+          var bToA = Matter.Vector.sub(poleB, poleA),
+            distanceSq = Matter.Vector.magnitudeSquared(bToA),
+            forceA = pullA ? Matter.Vector.neg(getForce(poleA, poleB, pullA, distanceSq)) : emptyVector,
+            forceB = pullB ? getForce(poleB, poleA, pullB, distanceSq) : emptyVector,
+            force = Matter.Vector.add(forceA, forceB);
+
+          // to apply forces to both bodies
+          Matter.Body.applyForce(bodyA, poleA, Matter.Vector.neg(force));
+          Matter.Body.applyForce(bodyB, poleB, force);
+        },
+        getPole = function (index, vertices, pole) {
+          var length = vertices.length,
+            a = vertices[index % length],
+            b = vertices[(index + 1) % length];
+
+          pole.cornerA = a;
+          pole.cornerB = b;
+          pole.x = (a.x + b.x) / 2;
+          pole.y = (a.y + b.y) / 2;
+          return pole;
+        },
+        getSouthPole = function (magnet, vertices, pole) {
+          if (typeof magnet.south !== 'number') {
+            magnet.south = vertices.length / 2 >> 0;
+          }
+
+          return getPole(magnet.south, vertices, pole);
+        },
+        getNorthPole = function (magnet, vertices, pole) {
+          if (typeof magnet.north !== 'number') {
+            magnet.north = 0;
+          }
+
+          return getPole(magnet.north, vertices, pole);
+        };
+
+      return function (bodyA, bodyB) {
+        var magnetA = bodyA.plugin.magnet,
+          magnetB = bodyB.plugin.magnet,
+          poleANorth = null,
+          poleASouth = null,
+          poleBNorth = null,
+          poleBSouth = null,
+          pullA = 0,
+          pullB = 0,
+          repel = -1,
+          verticesA = bodyA.vertices,
+          verticesB = bodyB.vertices;
+
+        if (!magnetA) {
+          magnetA = bodyA.plugin.magnet = {};
+        }
+
+        if (!magnetB || !(magnetA.pull || magnetB.pull)) {
+          return;
+        }
+
+        pullA = magnetA.pull || 0;
+        pullB = magnetB.pull || 0;
+        if (pullA) {
+          poleANorth = getNorthPole(magnetA, verticesA, northA);
+          poleASouth = getSouthPole(magnetA, verticesA, southA);
+        } else {
+          poleANorth = poleASouth = bodyA.position;
+          repel = 1;
+        }
+        if (pullB) {
+          poleBNorth = getNorthPole(magnetB, verticesB, northB);
+          poleBSouth = getSouthPole(magnetB, verticesB, southB);
+        } else {
+          poleBNorth = poleBSouth = bodyB.position;
+          repel = 1;
+        }
+        
+        applyForce(poleANorth, poleBNorth, bodyA, bodyB, repel * pullA, repel * pullB);
+        applyForce(poleANorth, poleBSouth, bodyA, bodyB, pullA, pullB);
+        applyForce(poleASouth, poleBNorth, bodyA, bodyB, pullA, pullB);
+        applyForce(poleASouth, poleBSouth, bodyA, bodyB, repel * pullA, repel * pullB);
+      };
+    }())
   }
 };
 
