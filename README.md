@@ -94,6 +94,7 @@ var body = Matter.Bodies.circle(0, 0, 10, {
 
 There are some attractors you can push to `body.plugin.attractors`:
 
+- `MatterAttractors.Attractors.fan` - creates an outward force from one or more faces of a body to push other bodies away
 - `MatterAttractors.Attractors.gravity` - uses Newton's gravitational laws to apply an attractive force on both bodies
 - `MatterAttractors.Attractors.magnet` - uses a magnet-like vector field around magnetic bodies to apply force on other magnetic bodies
 

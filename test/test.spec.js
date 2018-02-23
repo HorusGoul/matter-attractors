@@ -108,4 +108,26 @@ describe(MatterAttractors.name, function() {
     expect(attractedBody.velocity.x).to.be.above(0);
     expect(attractedBody.velocity.y).to.be.above(0);
   });
+
+  it('applies fan attractor correctly', function() {
+    let attractorBody = Matter.Bodies.rectangle(0, 20, 30, 8, {
+        plugin: {
+          fan: {
+            push: 100
+          },
+          attractors: [
+            MatterAttractors.Attractors.fan
+          ]
+        }
+      }),
+      attractedBody = Matter.Bodies.circle(0, 0, 10),
+      engine = Matter.Engine.create();
+
+    engine.world.gravity.scale = 0;
+    Matter.World.add(engine.world, [attractorBody, attractedBody]);
+    Matter.Engine.update(engine);
+
+    expect(attractedBody.velocity.x).to.equal(0);
+    expect(attractedBody.velocity.y).to.be.below(0);
+  });
 });

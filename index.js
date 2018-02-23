@@ -236,6 +236,75 @@ const MatterAttractors = {
         applyForce(poleASouth, poleBNorth, bodyA, bodyB, pullA, pullB);
         applyForce(poleASouth, poleBSouth, bodyA, bodyB, repel * pullA, repel * pullB);
       };
+    }()),
+
+    fan: (function () {
+      var project = function (fromV, toV) {
+          return Matter.Vector.mult(toV, Matter.Vector.dot(fromV, toV) / Matter.Vector.dot(toV, toV));
+        },
+        applyForce = function (push, cornerA, cornerB, item, fan, moveFan) {
+          var face = Matter.Vector.sub(cornerB, cornerA),
+            norm = Matter.Vector.perp(face, true),
+            rel = Matter.Vector.sub(item.position, cornerA),
+            projection = null,
+            pSq = 0,
+            distanceSq = 0,
+            pushiness = 0,
+            force = null;
+
+          if (Matter.Vector.dot(norm, rel) <= 0) { // behind
+            return;
+          }
+
+          projection = project(rel, face);
+          pSq = Matter.Vector.magnitudeSquared(projection);
+          if (pSq > Matter.Vector.magnitudeSquared(face)) {
+            rel = Matter.Vector.sub(rel, face);
+            item.torque += push / Math.max(push * 10, Matter.Vector.magnitudeSquared(Matter.Vector.sub(projection, face)));
+          } else if (Matter.Vector.dot(projection, face) > 0) {
+            rel = Matter.Vector.sub(rel, projection);
+          } else {
+            item.torque -= push / Math.max(push * 10, pSq);
+          }
+
+          distanceSq = Matter.Vector.magnitudeSquared(rel);
+
+          pushiness = Matter.Vector.magnitudeSquared(project(rel, norm)) / distanceSq;
+          pushiness *= push / Math.max(push * 10, distanceSq);
+
+          force = Matter.Vector.mult(Matter.Vector.normalise(rel), pushiness);
+
+          // to apply forces to both bodies
+          Matter.Body.applyForce(item, item.position, force);
+          if (moveFan) {
+            Matter.Body.applyForce(fan, fan.position, Matter.Vector.neg(force));
+          }
+        },
+        getCorner = function (index, vertices) {
+          return vertices[index % vertices.length];
+        };
+
+      return function (bodyA, bodyB) {
+        var faces = null,
+          fan = bodyA.plugin.fan,
+          i = 0,
+          vertices = bodyA.vertices;
+
+        if (!fan || !fan.push) {
+          return;
+        }
+
+        if (!fan.faces) {
+          faces = fan.faces = [0];
+        } else {
+          faces = fan.faces;
+        }
+        i = faces.length;
+
+        while (i--) {
+          applyForce(fan.push, getCorner(faces[i], vertices), getCorner(faces[i] + 1, vertices), bodyB, bodyA, fan.move);
+        }
+      };
     }())
   }
 };
